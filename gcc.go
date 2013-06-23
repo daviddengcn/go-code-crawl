@@ -126,6 +126,7 @@ func CrawlPerson(httpClient *http.Client, id string) (*Person, error) {
 }
 
 const pushPackageFieldName = "pkgjson"
+const reportBadPackageFieldName = "pkg"
 
 func PushPackage(httpClient *http.Client, urlStr string, p *Package) error {
 	bytes, err := json.Marshal(p)
@@ -136,11 +137,8 @@ func PushPackage(httpClient *http.Client, urlStr string, p *Package) error {
 	_, err = httpClient.PostForm(urlStr, url.Values{
 		pushPackageFieldName: {string(bytes)},
 	})
-	if err != nil {
-		return err
-	}
 	
-	return nil
+	return err
 }
 
 func ParsePushPackage(r *http.Request) (*Package, error) {
@@ -153,6 +151,17 @@ func ParsePushPackage(r *http.Request) (*Package, error) {
 	}
 	
 	return &p, nil
+}
+
+func ReportBadPackage(httpClient *http.Client, urlStr, pkg string) error {
+	_, err := httpClient.PostForm(urlStr, url.Values{
+		reportBadPackageFieldName: {pkg},
+	})
+	return err
+}
+
+func ParseReportBadPackage(r *http.Request) (pkg string) {
+	return r.FormValue(reportBadPackageFieldName)
 }
 
 const pushPersonFieldName = "psnjson"
@@ -192,6 +201,7 @@ func ParsePushPerson(r *http.Request) (*Person, error) {
 	var p Person
 	err := json.Unmarshal([]byte(jsonStr), &p)
 	if err != nil {
+		fmt.Println("jsonStr:", jsonStr)
 		return nil, err
 	}
 	
