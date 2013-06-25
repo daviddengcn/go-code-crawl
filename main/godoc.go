@@ -2,18 +2,19 @@
 package main
 
 import (
+	"crypto/tls"
+	"encoding/json"
 	"github.com/daviddengcn/go-code-crawl"
 	"github.com/daviddengcn/go-ljson-conf"
 	"github.com/daviddengcn/go-rpc"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
-	"crypto/tls"
-	"encoding/json"
 )
 
 var (
-	serverAddr = "http://localhost:8080"
+	serverAddr  = "http://localhost:8080"
 	proxyServer = ""
 )
 
@@ -21,12 +22,12 @@ func init() {
 	conf, _ := ljconf.Load("conf.json")
 	serverAddr = conf.String("host", serverAddr)
 	proxyServer = conf.String("proxy", proxyServer)
-	
+
 }
 
 func genHttpClient(proxy string) *http.Client {
-	tp := &http.Transport {
-		TLSClientConfig: &tls.Config {
+	tp := &http.Transport{
+		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
 	}
@@ -39,22 +40,21 @@ func genHttpClient(proxy string) *http.Client {
 			tp.Proxy = http.ProxyURL(proxyURL)
 		}
 	}
-	
-	return &http.Client {
+
+	return &http.Client{
 		Transport: tp,
 	}
 }
 
-
 func main() {
 	const godocApiUrl = "http://api.godoc.org/packages"
-	
+
 	log.Printf("Server: %s", serverAddr)
-	
+
 	httpClient := genHttpClient(proxyServer)
 	rpcClient := rpc.NewClient(httpClient, serverAddr)
 	client := gcc.NewServiceClient(rpcClient)
-	
+
 	log.Printf("Crawling %s ...", godocApiUrl)
 	resp, err := httpClient.Get(godocApiUrl)
 	if err != nil {
@@ -66,7 +66,7 @@ func main() {
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	var results map[string][]map[string]string
 	dec := json.NewDecoder(resp.Body)
 	err = dec.Decode(&results)
@@ -74,30 +74,32 @@ func main() {
 		log.Printf("Parse results failed: %v", err)
 		return
 	}
-	
+
 	pkgs := results["results"]
 	log.Printf("%d packages found!", len(pkgs))
-	
+
+	perms := rand.Perm(len(pkgs))
+
 	pkgArr := make([]string, len(pkgs))
 	for i := range pkgs {
-		pkgArr[i] = pkgs[i]["path"]
+		pkgArr[i] = pkgs[perms[i]]["path"]
 	}
-	
+
 	newNum := 0
-	
+
 	for i := 0; i < len(pkgArr); i += 200 {
 		l := 200
 		if len(pkgArr) < l {
 			l = len(pkgArr)
 		}
-		
+
 		nn := client.AppendPackages(nil, pkgArr[:l])
 		err = client.LastError()
 		if err != nil {
 			log.Printf("AppendPackages failed: %v", err)
 			return
 		}
-		
+
 		pkgArr = pkgArr[l:]
 		newNum += nn
 		log.Printf("New packages: %d", newNum)

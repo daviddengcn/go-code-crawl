@@ -1,20 +1,20 @@
 package main
 
 import (
+	"crypto/tls"
+	"fmt"
+	"github.com/daviddengcn/gddo/doc"
 	"github.com/daviddengcn/go-code-crawl"
 	"github.com/daviddengcn/go-ljson-conf"
 	"github.com/daviddengcn/go-rpc"
-	"github.com/daviddengcn/gddo/doc"
 	"log"
 	"net/http"
 	"net/url"
-	"crypto/tls"
 	"os"
-	"fmt"
 )
 
 var (
-	serverAddr = "http://localhost:8080"
+	serverAddr  = "http://localhost:8080"
 	proxyServer = ""
 )
 
@@ -29,8 +29,8 @@ func showHelp() {
 }
 
 func genHttpClient(proxy string) *http.Client {
-	tp := &http.Transport {
-		TLSClientConfig: &tls.Config {
+	tp := &http.Transport{
+		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
 	}
@@ -43,44 +43,44 @@ func genHttpClient(proxy string) *http.Client {
 			tp.Proxy = http.ProxyURL(proxyURL)
 		}
 	}
-	
-	return &http.Client {
+
+	return &http.Client{
 		Transport: tp,
 	}
 }
 
 func main() {
 	conf, _ := ljconf.Load("conf.json")
-	
+
 	serverAddr = conf.String("host", serverAddr)
 	restSeconds = conf.Int("rest_seconds", restSeconds)
 	proxyServer = conf.String("proxy", proxyServer)
 	entriesPerLoop = conf.Int("entries_per_loop", entriesPerLoop)
-	
+
 	log.Printf("Server: %s", serverAddr)
-	
+
 	if len(os.Args) < 3 {
 		showHelp()
 		return
 	}
-	
+
 	cmd := os.Args[1]
 	if cmd != "package" && cmd != "person" {
 		showHelp()
 		return
 	}
-	
+
 	httpClient := genHttpClient(proxyServer)
 	rpcClient := rpc.NewClient(httpClient, serverAddr)
 	client := gcc.NewServiceClient(rpcClient)
-	
+
 	switch cmd {
 	case "package":
 		pkg := os.Args[2]
 		p, err := gcc.CrawlPackage(httpClient, pkg)
 		if err != nil {
 			log.Printf("Crawling pkg %s failed: %v", pkg, err)
-			
+
 			if doc.IsNotFound(err) {
 				// a wrong path
 				client.ReportBadPackage(nil, pkg)
@@ -88,11 +88,11 @@ func main() {
 			}
 			break
 		}
-		
+
 		log.Printf("Crawled package %s success!", pkg)
 		log.Printf("Imports: %d, Doc: %d, ReadmeFn: %s, ReadmeData: %d",
 			len(p.Imports), len(p.Doc), p.ReadmeFn, len(p.ReadmeData))
-		
+
 		client.PushPackage(nil, p)
 		err = client.LastError()
 		if err != nil {
@@ -100,7 +100,7 @@ func main() {
 			break
 		}
 		log.Printf("Push package %s success!", pkg)
-		
+
 	case "person":
 		id := os.Args[2]
 		p, err := gcc.CrawlPerson(httpClient, id)
@@ -108,7 +108,7 @@ func main() {
 			log.Printf("Crawling person %s failed: %v", id, err)
 			break
 		}
-		
+
 		log.Printf("Crawled person %s success!", id)
 		newPackage := client.PushPerson(nil, p)
 		err = client.LastError()
@@ -116,7 +116,7 @@ func main() {
 			log.Printf("Push person %s failed: %v", id, err)
 			break
 		}
-		
+
 		log.Printf("Push person %s success: %v", id, newPackage)
 	}
 }
