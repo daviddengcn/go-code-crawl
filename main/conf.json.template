@@ -1,0 +1,6 @@
+{
+    host: "http://localhost:8080"
+    rest_seconds: 60
+    proxy: ""
+    entries_per_loop: 10
+}

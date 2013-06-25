@@ -3,21 +3,21 @@ package main
 import (
 	"github.com/daviddengcn/go-code-crawl"
 	"github.com/daviddengcn/go-ljson-conf"
+	"github.com/daviddengcn/go-rpc"
 	"github.com/daviddengcn/gddo/doc"
 	"log"
 	"net/http"
 	"net/url"
 	"crypto/tls"
 	"sync"
-	"encoding/json"
 	"time"
-	"fmt"
 )
 
 var (
-	serverAddr = "localhost:8080"
+	serverAddr = "http://localhost:8080"
 	proxyServer = ""
 	restSeconds = 60
+	entriesPerLoop = 10
 )
 
 func init() {
@@ -26,40 +26,119 @@ func init() {
 	doc.SetUserAgent("Go-Code-Search-Agent")
 }
 
-func getJson(httpClient *http.Client, url string, v interface{}) error {
-	resp, err := httpClient.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	
-	dec := json.NewDecoder(resp.Body)
-	
-	return dec.Decode(v)
-}
-
 func main() {
 	conf, _ := ljconf.Load("conf.json")
 	
 	serverAddr = conf.String("host", serverAddr)
 	restSeconds = conf.Int("rest_seconds", restSeconds)
 	proxyServer = conf.String("proxy", proxyServer)
+	entriesPerLoop = conf.Int("entries_per_loop", entriesPerLoop)
 	
 	log.Printf("Server: %s", serverAddr)
 	
-	L := 10
+	httpClient := genHttpClient(proxyServer)
+	rpcClient := rpc.NewClient(httpClient, serverAddr)
+	client := gcc.NewServiceClient(rpcClient)
 	
-	packageEntryURL := fmt.Sprintf("http://%s/crawlentries?kind=crawler&l=%d",
-		serverAddr, L)
-	personEntryURL := fmt.Sprintf("http://%s/crawlentries?kind=crawler-person&l=%d",
-		serverAddr, L)
-	
-	packagePushURL := "http://" + serverAddr + "/pushpkg"
-	personPushURL := "http://" + serverAddr + "/pushpsn"
-	
-	reportBadPackageURL := fmt.Sprintf("http://%s/reportbadpkg", serverAddr)
-	//reportBadPersonURL := fmt.Sprintf("http://%s/reportbadPsn", serverAddr)
-	
+	for {
+		var wg sync.WaitGroup
+		
+		morePackages := false
+		pkgs := client.FetchPackageList(nil, entriesPerLoop)
+		err := client.LastError()
+		if err !=  nil {
+			log.Printf("FetchPackageList failed: %v", err)
+		} else {
+			morePackages = len(pkgs) >= entriesPerLoop
+			
+			groups := gcc.GroupPackages(pkgs)
+			log.Printf("Packages: %v, %d groups", groups, len(groups))
+			
+			wg.Add(len(groups))
+			
+			for _, pkgs := range groups {
+				go func(pkgs []string) {
+					for _, pkg := range pkgs {
+						p, err := gcc.CrawlPackage(httpClient, pkg)
+						if err != nil {
+							log.Printf("Crawling pkg %s failed: %v", pkg, err)
+							
+							if doc.IsNotFound(err) {
+								// a wrong path
+								client.ReportBadPackage(nil, pkg)
+								log.Printf("Remove wrong package %s: %v", pkg, client.LastError)
+							}
+							continue
+						}
+						
+						log.Printf("Crawled package %s success!", pkg)
+						
+						client.PushPackage(nil, p)
+						err = client.LastError()
+						if err != nil {
+							log.Printf("Push package %s failed: %v", pkg, err)
+							continue
+						}
+						log.Printf("Push package %s success!", pkg)
+					}
+					
+					wg.Done()
+				}(pkgs)
+			}
+		}
+		
+		hasNewPackage := false
+		morePersons := false
+		persons := client.FetchPersonList(nil, entriesPerLoop)
+		err = client.LastError()
+		if err !=  nil {
+			log.Printf("FetchPersonList failed: %v", err)
+		} else {
+			morePersons = len(persons) >= entriesPerLoop
+			
+			groups := gcc.GroupPersons(persons)
+			log.Printf("persons: %v, %d groups", groups, len(groups))
+			
+			wg.Add(len(groups))
+			
+			for _, ids := range groups {
+				go func(ids []string) {
+					for _, id := range ids {
+						p, err := gcc.CrawlPerson(httpClient, id)
+						if err != nil {
+							log.Printf("Crawling person %s failed: %v", id, err)
+							continue
+						}
+						
+						log.Printf("Crawled person %s success!", id)
+						newPackage := client.PushPerson(nil, p)
+						err = client.LastError()
+						if err != nil {
+							log.Printf("Push person %s failed: %v", id, err)
+							continue
+						}
+						
+						log.Printf("Push person %s success: %v", id, newPackage)
+						if newPackage {
+							hasNewPackage = true
+						}
+					}
+					
+					wg.Done()
+				}(ids)
+			}
+		}
+		
+		wg.Wait()
+		
+		if !morePackages && !morePersons && !hasNewPackage {
+			log.Printf("Nothing to do, have a rest...")
+			time.Sleep(time.Duration(restSeconds) * time.Second)
+		}
+	}
+}
+
+func genHttpClient(proxy string) *http.Client {
 	tp := &http.Transport {
 		TLSClientConfig: &tls.Config {
 			InsecureSkipVerify: true,
@@ -75,100 +154,7 @@ func main() {
 		}
 	}
 	
-	httpClient := &http.Client {
+	return &http.Client {
 		Transport: tp,
-	}
-	
-	for {
-		var wg sync.WaitGroup
-		
-		morePackages := false
-		var pkgs []string
-		err := getJson(httpClient, packageEntryURL, &pkgs)
-		if err !=  nil {
-			log.Printf("getJson(%s) failed: %v", packageEntryURL, err)
-		} else {
-			morePackages = len(pkgs) >= L
-			
-			groups := gcc.GroupPackages(pkgs)
-			log.Printf("Packages: %v", groups)
-			
-			wg.Add(len(groups))
-			
-			for _, pkgs := range groups {
-				go func(pkgs []string) {
-					for _, pkg := range pkgs {
-						p, err := gcc.CrawlPackage(httpClient, pkg)
-						if err != nil {
-							log.Printf("Crawling pkg %s failed: %v", pkg, err)
-							
-							if doc.IsNotFound(err) {
-								// a wrong path
-								err := gcc.ReportBadPackage(httpClient,
-									reportBadPackageURL, pkg)
-								log.Printf("Remove wrong package %s: %v", pkg, err)
-							}
-							continue
-						}
-						
-						log.Printf("Crawled package %s success!", pkg)
-						
-						err = gcc.PushPackage(httpClient, packagePushURL, p)
-						if err != nil {
-							log.Printf("Push package %s failed: %v", pkg, err)
-							continue
-						}
-						log.Printf("Push package %s success!", pkg)
-					}
-					
-					wg.Done()
-				}(pkgs)
-			}
-		}
-		
-		hasNewPackage := false
-		var persons []string
-		err = getJson(httpClient, personEntryURL, &persons)
-		if err !=  nil {
-			log.Printf("getJson(%s) failed: %v", personEntryURL, err)
-		} else {
-			groups := gcc.GroupPersons(persons)
-			log.Printf("persons: %v", groups)
-			
-			wg.Add(len(groups))
-			
-			for _, ids := range groups {
-				go func(ids []string) {
-					for _, id := range ids {
-						p, err := gcc.CrawlPerson(httpClient, id)
-						if err != nil {
-							log.Printf("Crawling person %s failed: %v", id, err)
-							continue
-						}
-						
-						log.Printf("Crawled person %s success!", id)
-						reply, err := gcc.PushPerson(httpClient, personPushURL, p)
-						if err != nil {
-							log.Printf("Push person %s failed: %v", id, err)
-							continue
-						}
-						
-						log.Printf("Push person %s success: %+v", id, reply)
-						if reply.NewPackage {
-							hasNewPackage = true
-						}
-					}
-					
-					wg.Done()
-				}(ids)
-			}
-		}
-		
-		wg.Wait()
-		
-		if !morePackages && !hasNewPackage {
-			log.Printf("Nothing to do, have a rest...")
-			time.Sleep(time.Duration(restSeconds) * time.Second)
-		}
 	}
 }

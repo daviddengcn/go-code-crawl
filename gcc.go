@@ -1,29 +1,30 @@
 /*
 	Package gcc is the crawling package for go-code search engine (GCSE)
- */
+*/
 package gcc
 
 import (
 	"fmt"
-	"strings"
+	"github.com/daviddengcn/gddo/doc"
 	"net/http"
 	"net/url"
-	"github.com/daviddengcn/gddo/doc"
-	"encoding/json"
+	"strings"
+
+	"github.com/daviddengcn/go-rpc"
 )
 
 type Package struct {
-	Name string
+	Name       string
 	ImportPath string
-	Synopsis string
-	Doc string
+	Synopsis   string
+	Doc        string
 	ProjectURL string
-	
-	StarCount int
-	ReadmeFn string
+
+	StarCount  int
+	ReadmeFn   string
 	ReadmeData string
-	
-	Imports []string
+
+	Imports    []string
 	References []string
 }
 
@@ -32,25 +33,25 @@ func CrawlPackage(httpClient *http.Client, pkg string) (p *Package, err error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	readmeFn, readmeData := "", ""
 	for fn, data := range pdoc.ReadmeFiles {
 		readmeFn, readmeData = fn, string(data)
 		break
 	}
-	
-	return &Package {
-		Name: pdoc.Name,
+
+	return &Package{
+		Name:       pdoc.Name,
 		ImportPath: pdoc.ImportPath,
-		Synopsis: pdoc.Synopsis,
-		Doc: pdoc.Doc,
+		Synopsis:   pdoc.Synopsis,
+		Doc:        pdoc.Doc,
 		ProjectURL: pdoc.ProjectURL,
-		StarCount: pdoc.StarCount,
-		
-		ReadmeFn: readmeFn,
+		StarCount:  pdoc.StarCount,
+
+		ReadmeFn:   readmeFn,
 		ReadmeData: readmeData,
-		
-		Imports: pdoc.Imports,
+
+		Imports:    pdoc.Imports,
 		References: pdoc.References,
 	}, nil
 }
@@ -68,15 +69,15 @@ func GroupPackages(pkgs []string) (groups map[string][]string) {
 	groups = make(map[string][]string)
 
 	for _, pkg := range pkgs {
-		host := ""	
+		host := ""
 		u, err := url.Parse("http://" + pkg)
 		if err == nil {
 			host = u.Host
 		}
-		
+
 		groups[host] = append(groups[host], pkg)
 	}
-	
+
 	return
 }
 
@@ -85,15 +86,15 @@ func GroupPersons(ids []string) (groups map[string][]string) {
 
 	for _, id := range ids {
 		host, _ := ParsePersonId(id)
-		
+
 		groups[host] = append(groups[host], id)
 	}
-	
+
 	return
 }
 
 type Person struct {
-	Id string
+	Id       string
 	Packages []string
 }
 
@@ -106,7 +107,7 @@ func CrawlPerson(httpClient *http.Client, id string) (*Person, error) {
 			return nil, err
 		} else {
 			return &Person{
-				Id: id,
+				Id:       id,
 				Packages: p.Projects,
 			}, nil
 		}
@@ -116,94 +117,60 @@ func CrawlPerson(httpClient *http.Client, id string) (*Person, error) {
 			return nil, err
 		} else {
 			return &Person{
-				Id: id,
+				Id:       id,
 				Packages: p.Projects,
 			}, nil
 		}
 	}
-			
+
 	return nil, nil
 }
 
-const pushPackageFieldName = "pkgjson"
-const reportBadPackageFieldName = "pkg"
-
-func PushPackage(httpClient *http.Client, urlStr string, p *Package) error {
-	bytes, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	
-	_, err = httpClient.PostForm(urlStr, url.Values{
-		pushPackageFieldName: {string(bytes)},
-	})
-	
-	return err
+/*
+	For client side, the first parameter (*http.Request) is ignored, simply set
+	it to nil.
+*/
+type GoSearchService interface {
+	FetchPackageList(r *http.Request, l int) (pkgs []string)
+	FetchPersonList(r *http.Request, l int) (ids []string)
+	PushPackage(r *http.Request, p *Package)
+	ReportBadPackage(r *http.Request, pkg string)
+	PushPerson(r *http.Request, p *Person) (NewPackage bool)
+	LastError() error
 }
 
-func ParsePushPackage(r *http.Request) (*Package, error) {
-	jsonStr := r.FormValue(pushPackageFieldName)
-	
-	var p Package
-	err := json.Unmarshal([]byte(jsonStr), &p)
-	if err != nil {
-		return nil, err
-	}
-	
-	return &p, nil
+type client struct {
+	lastError error
+	rpcClient *rpc.Client
 }
 
-func ReportBadPackage(httpClient *http.Client, urlStr, pkg string) error {
-	_, err := httpClient.PostForm(urlStr, url.Values{
-		reportBadPackageFieldName: {pkg},
-	})
-	return err
+func (c *client) FetchPackageList(r *http.Request, l int) (pkgs []string) {
+	c.lastError = c.rpcClient.Call(1, "FetchPackageList", l, &pkgs)
+	return
 }
 
-func ParseReportBadPackage(r *http.Request) (pkg string) {
-	return r.FormValue(reportBadPackageFieldName)
+func (c *client) FetchPersonList(r *http.Request, l int) (ids []string) {
+	c.lastError = c.rpcClient.Call(1, "FetchPersonList", l, &ids)
+	return
 }
 
-const pushPersonFieldName = "psnjson"
-
-type PushPersonReply struct {
-	NewPackage bool
+func (c *client) PushPackage(r *http.Request, p *Package) {
+	c.lastError = c.rpcClient.Call(1, "PushPackage", p)
 }
 
-func PushPerson(httpClient *http.Client, urlStr string, p *Person) (*PushPersonReply, error) {
-	bytes, err := json.Marshal(p)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := httpClient.PostForm(urlStr, url.Values{
-		pushPersonFieldName: {string(bytes)},
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	
-	var reply PushPersonReply
-	
-	dec := json.NewDecoder(resp.Body)
-	err = dec.Decode(&reply)
-	if err != nil {
-		return nil, err
-	}
-	
-	return &reply, nil
+func (c *client) ReportBadPackage(r *http.Request, pkg string) {
+	c.lastError = c.rpcClient.Call(1, "ReportBadPackage", pkg)
 }
 
-func ParsePushPerson(r *http.Request) (*Person, error) {
-	jsonStr := r.FormValue(pushPersonFieldName)
-	
-	var p Person
-	err := json.Unmarshal([]byte(jsonStr), &p)
-	if err != nil {
-		fmt.Println("jsonStr:", jsonStr)
-		return nil, err
-	}
-	
-	return &p, nil
+func (c *client) PushPerson(r *http.Request, p *Person) (NewPackage bool) {
+	c.lastError = c.rpcClient.Call(1, "PushPerson", p, &NewPackage)
+	return
+}
+
+func (c *client) LastError() error {
+	return c.lastError
+}
+
+func NewServiceClient(rpcClient *rpc.Client) GoSearchService {
+	return &client{rpcClient: rpcClient}
 }
