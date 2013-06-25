@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 var (
@@ -78,6 +79,7 @@ func main() {
 	pkgs := results["results"]
 	log.Printf("%d packages found!", len(pkgs))
 
+	rand.Seed(time.Now().UnixNano())
 	perms := rand.Perm(len(pkgs))
 
 	pkgArr := make([]string, len(pkgs))
