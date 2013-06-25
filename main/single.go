@@ -16,8 +16,6 @@ import (
 var (
 	serverAddr = "http://localhost:8080"
 	proxyServer = ""
-	restSeconds = 60
-	entriesPerLoop = 10
 )
 
 func init() {

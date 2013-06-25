@@ -132,11 +132,19 @@ func CrawlPerson(httpClient *http.Client, id string) (*Person, error) {
 */
 type GoSearchService interface {
 	FetchPackageList(r *http.Request, l int) (pkgs []string)
-	FetchPersonList(r *http.Request, l int) (ids []string)
 	PushPackage(r *http.Request, p *Package)
 	ReportBadPackage(r *http.Request, pkg string)
+	TouchPackage(r *http.Request, pkg string) (earlySchedule bool)
+	AppendPackages(r *http.Request, pkgs []string) (newNum int)
+	
+	FetchPersonList(r *http.Request, l int) (ids []string)
 	PushPerson(r *http.Request, p *Person) (NewPackage bool)
+	
 	LastError() error
+}
+
+func Register(server GoSearchService) {
+	rpc.Register(server)
 }
 
 type client struct {
@@ -164,6 +172,16 @@ func (c *client) ReportBadPackage(r *http.Request, pkg string) {
 
 func (c *client) PushPerson(r *http.Request, p *Person) (NewPackage bool) {
 	c.lastError = c.rpcClient.Call(1, "PushPerson", p, &NewPackage)
+	return
+}
+
+func (c *client) TouchPackage(r *http.Request, pkg string) (earlySchedule bool) {
+	c.lastError = c.rpcClient.Call(1, "TouchPackage", pkg, &earlySchedule)
+	return
+}
+
+func (c *client) AppendPackages(r *http.Request, pkgs []string) (newNum int) {
+	c.lastError = c.rpcClient.Call(1, "AppendPackages", pkgs, &newNum)
 	return
 }
 
