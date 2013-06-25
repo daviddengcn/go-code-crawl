@@ -88,8 +88,9 @@ func main() {
 	}
 
 	newNum := 0
+	appended := 0
 
-	for i := 0; i < len(pkgArr); i += 200 {
+	for len(pkgArr) > 0 {
 		l := 200
 		if len(pkgArr) < l {
 			l = len(pkgArr)
@@ -102,8 +103,10 @@ func main() {
 			return
 		}
 
-		pkgArr = pkgArr[l:]
 		newNum += nn
-		log.Printf("New packages: %d", newNum)
+		appended += l
+		log.Printf("New packages: %d/%d", newNum, appended)
+		
+		pkgArr = pkgArr[l:]
 	}
 }
