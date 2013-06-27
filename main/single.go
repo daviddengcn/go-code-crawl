@@ -79,10 +79,10 @@ func main() {
 		if err != nil {
 			log.Printf("Crawling pkg %s failed: %v", pkg, err)
 
-			if doc.IsNotFound(err) {
+			if gcc.IsBadPackage(err) {
 				// a wrong path
 				client.ReportBadPackage(nil, pkg)
-				log.Printf("Remove wrong package %s: %v", pkg, client.LastError)
+				log.Printf("Remove wrong package %s: %v", pkg, client.LastError())
 			}
 			break
 		}

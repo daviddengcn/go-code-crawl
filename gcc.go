@@ -6,6 +6,7 @@ package gcc
 import (
 	"fmt"
 	"github.com/daviddengcn/gddo/doc"
+	godoc "go/doc"
 	"github.com/daviddengcn/go-villa"
 	"net/http"
 	"net/url"
@@ -45,6 +46,10 @@ func CrawlPackage(httpClient *http.Client, pkg string) (p *Package, err error) {
 		} else {
 			readmeFn, readmeData = "", ""
 		}
+	}
+	
+	if pdoc.Doc == "" && pdoc.Synopsis == "" {
+		pdoc.Synopsis = godoc.Synopsis(readmeData)
 	}
 	
 	return &Package{
@@ -131,6 +136,10 @@ func CrawlPerson(httpClient *http.Client, id string) (*Person, error) {
 	}
 
 	return nil, nil
+}
+
+func IsBadPackage(err error) bool {
+	return doc.IsNotFound(villa.DeepestNested(err))
 }
 
 /*
