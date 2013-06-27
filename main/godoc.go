@@ -106,7 +106,7 @@ func main() {
 		newNum += nn
 		appended += l
 		log.Printf("New packages: %d/%d", newNum, appended)
-		
+
 		pkgArr = pkgArr[l:]
 	}
 }

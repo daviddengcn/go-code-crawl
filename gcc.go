@@ -14,7 +14,6 @@ import (
 	"github.com/daviddengcn/go-rpc"
 	
 	"unicode/utf8"
-	"log"
 )
 
 type Package struct {
