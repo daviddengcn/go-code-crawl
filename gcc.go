@@ -6,11 +6,15 @@ package gcc
 import (
 	"fmt"
 	"github.com/daviddengcn/gddo/doc"
+	"github.com/daviddengcn/go-villa"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/daviddengcn/go-rpc"
+	
+	"unicode/utf8"
+	"log"
 )
 
 type Package struct {
@@ -31,15 +35,19 @@ type Package struct {
 func CrawlPackage(httpClient *http.Client, pkg string) (p *Package, err error) {
 	pdoc, err := doc.Get(httpClient, pkg, "")
 	if err != nil {
-		return nil, err
+		return nil, villa.NestErrorf(err, "CrawlPackage(%s)", pkg)
 	}
 
 	readmeFn, readmeData := "", ""
 	for fn, data := range pdoc.ReadmeFiles {
 		readmeFn, readmeData = fn, string(data)
-		break
+		if utf8.ValidString(readmeData) {
+			break
+		} else {
+			readmeFn, readmeData = "", ""
+		}
 	}
-
+	
 	return &Package{
 		Name:       pdoc.Name,
 		ImportPath: pdoc.ImportPath,
@@ -104,7 +112,7 @@ func CrawlPerson(httpClient *http.Client, id string) (*Person, error) {
 	case "github.com":
 		p, err := doc.GetGithubPerson(httpClient, map[string]string{"owner": username})
 		if err != nil {
-			return nil, err
+			return nil, villa.NestErrorf(err, "CrawlPerson(%s)", id)
 		} else {
 			return &Person{
 				Id:       id,
@@ -114,7 +122,7 @@ func CrawlPerson(httpClient *http.Client, id string) (*Person, error) {
 	case "bitbucket.org":
 		p, err := doc.GetBitbucketPerson(httpClient, map[string]string{"owner": username})
 		if err != nil {
-			return nil, err
+			return nil, villa.NestErrorf(err, "CrawlPerson(%s)", id)
 		} else {
 			return &Person{
 				Id:       id,

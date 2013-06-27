@@ -53,9 +53,7 @@ func main() {
 	conf, _ := ljconf.Load("conf.json")
 
 	serverAddr = conf.String("host", serverAddr)
-	restSeconds = conf.Int("rest_seconds", restSeconds)
 	proxyServer = conf.String("proxy", proxyServer)
-	entriesPerLoop = conf.Int("entries_per_loop", entriesPerLoop)
 
 	log.Printf("Server: %s", serverAddr)
 
