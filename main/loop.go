@@ -6,42 +6,78 @@ import (
 	"github.com/daviddengcn/go-code-crawl"
 	"github.com/daviddengcn/go-ljson-conf"
 	"github.com/daviddengcn/go-rpc"
+	"github.com/daviddengcn/go-villa"
+	"github.com/daviddengcn/ljson"
 	"log"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+	"encoding/json"
 )
 
 var (
-	serverAddr     = "http://localhost:8080"
-	proxyServer    = ""
-	restSeconds    = 60
-	entriesPerLoop = 10
+	serverAddr      = "http://localhost:8080"
+	proxyServer     = ""
+	restSeconds     = 60
+	entriesPerLoop  = 10
+	doBlackPackages = false
+	blackPkgFn      = villa.Path("black_pkgs.json")
+	maxLoops        = -1
 )
 
 func init() {
+	conf, _ := ljconf.Load("conf.json")
+
+	serverAddr = conf.String("host", serverAddr)
+	restSeconds = conf.Int("rest_seconds", restSeconds)
+	proxyServer = conf.String("proxy", proxyServer)
+	
+	entriesPerLoop = conf.Int("entries_per_loop", entriesPerLoop)
+	maxLoops = conf.Int("max_loops", maxLoops)
+	
+	doBlackPackages = conf.Bool("black_packages.enabled", doBlackPackages)
+	if doBlackPackages {
+		blackPkgFn = villa.Path(conf.String("black_packages.filename", blackPkgFn.S()))
+	}
+	
 	doc.SetGithubCredentials("94446b37edb575accd8b",
 		"15f55815f0515a3f6ad057aaffa9ea83dceb220b")
 	doc.SetUserAgent("Go-Code-Search-Agent")
 }
 
 func main() {
-	conf, _ := ljconf.Load("conf.json")
-
-	serverAddr = conf.String("host", serverAddr)
-	restSeconds = conf.Int("rest_seconds", restSeconds)
-	proxyServer = conf.String("proxy", proxyServer)
-	entriesPerLoop = conf.Int("entries_per_loop", entriesPerLoop)
-
 	log.Printf("Server: %s", serverAddr)
+
+	var blackPackages villa.StrSet
+	if doBlackPackages {
+		func() {
+			f, err := blackPkgFn.Open()
+			if err != nil {
+				log.Printf("Open file %s failed: %v", blackPkgFn, err)
+				return
+			}
+			defer f.Close()
+
+			dec := ljson.NewDecoder(f)
+			var list []string
+			if err := dec.Decode(&list); err != nil {
+				log.Printf("Decode %s failed: %v", blackPkgFn, err)
+				return
+			}
+			blackPackages.Put(list...)
+			log.Printf("%d black packages loaded!", len(blackPackages))
+		}()
+	}
 
 	httpClient := genHttpClient(proxyServer)
 	rpcClient := rpc.NewClient(httpClient, serverAddr)
 	client := gcc.NewServiceClient(rpcClient)
 
-	for {
+	for maxLoops != 0 {
 		var wg sync.WaitGroup
+		
+		blackPackagesCnt := len(blackPackages)
 
 		morePackages := false
 		pkgs := client.FetchPackageList(nil, entriesPerLoop)
@@ -67,6 +103,10 @@ func main() {
 								// a wrong path
 								client.ReportBadPackage(nil, pkg)
 								log.Printf("Remove wrong package %s: %v", pkg, client.LastError())
+								
+								if doBlackPackages {
+									blackPackages.Put(pkg)
+								}
 							}
 							continue
 						}
@@ -131,9 +171,29 @@ func main() {
 
 		wg.Wait()
 
+		if blackPackagesCnt != len(blackPackages) {
+			func() {
+				log.Printf("Saving black packages...")
+				f, err := blackPkgFn.Create()
+				if err != nil {
+					log.Printf("Open file %s failed: %v", blackPkgFn, err)
+					return
+				}
+				
+				enc := json.NewEncoder(f)
+				err = enc.Encode(blackPackages.Elements())
+				if err != nil {
+					log.Printf("Encoding black packages failed: %v", err)
+				}
+			}()
+		}
+		
 		if !morePackages && !morePersons && !hasNewPackage {
-			log.Printf("Nothing to do, have a rest...")
+			log.Printf("Nothing to do, have a rest...(%d)", maxLoops)
 			time.Sleep(time.Duration(restSeconds) * time.Second)
+			if maxLoops > 0 {
+				maxLoops --
+			}
 		}
 	}
 }

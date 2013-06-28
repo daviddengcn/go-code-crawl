@@ -3,4 +3,14 @@
     rest_seconds: 60
     proxy: ""
     entries_per_loop: 10
+	max_loops: -1
+	black_packages: {
+		enabled: false
+		#filename: "black_pkgs.json"
+	}
+	
+	godoc: {
+		fast_mode: false
+		#pushed_pkg_fn: "pushed_pkgs.json"
+	}
 }
