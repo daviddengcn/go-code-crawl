@@ -88,7 +88,8 @@ func main() {
 			morePackages = len(pkgs) >= entriesPerLoop
 
 			groups := gcc.GroupPackages(pkgs)
-			log.Printf("Packages: %v, %d groups", groups, len(groups))
+			log.Printf("Packages: %v, %d packages, %d groups", groups, 
+				len(pkgs), len(groups))
 
 			wg.Add(len(groups))
 
@@ -137,7 +138,8 @@ func main() {
 			morePersons = len(persons) >= entriesPerLoop
 
 			groups := gcc.GroupPersons(persons)
-			log.Printf("persons: %v, %d groups", groups, len(groups))
+			log.Printf("persons: %v, %d persons, %d groups", groups, 
+				len(persons), len(groups))
 
 			wg.Add(len(groups))
 
