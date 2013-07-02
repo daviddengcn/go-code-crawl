@@ -4,6 +4,7 @@
 package gcc
 
 import (
+	"crypto/tls"
 	"fmt"
 	"github.com/daviddengcn/gddo/doc"
 	godoc "go/doc"
@@ -207,4 +208,76 @@ func (c *client) LastError() error {
 
 func NewServiceClient(rpcClient *rpc.Client) GoSearchService {
 	return &client{rpcClient: rpcClient}
+}
+
+
+func GenHttpClient(proxy string) *http.Client {
+	tp := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	if proxy != "" {
+		proxyURL, err := url.Parse(proxy)
+		if err == nil {
+			tp.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+
+	return &http.Client{
+		Transport: tp,
+	}
+}
+
+
+func AuthorOfPackage(pkg string) string {
+	parts := strings.Split(pkg, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+
+	switch parts[0] {
+	case "github.com", "bitbucket.org":
+		if len(parts) > 1 {
+			return parts[1]
+		}
+	case "llamaslayers.net":
+		return "Nightgunner5"
+	case "launchpad.net":
+		if len(parts) > 1 && strings.HasPrefix(parts[1], "~") {
+			return parts[1][1:]
+		}
+	}
+	return parts[0]
+}
+
+func ProjectOfPackage(pkg string) string {
+	parts := strings.Split(pkg, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+
+	switch parts[0] {
+	case "llamaslayers.net", "bazil.org":
+		if len(parts) > 1 {
+			return parts[1]
+		}
+	case "github.com", "code.google.com", "bitbucket.org", "labix.org":
+		if len(parts) > 2 {
+			return parts[2]
+		}
+	case "golanger.com":
+		return "golangers"
+
+	case "launchpad.net":
+		if len(parts) > 2 && strings.HasPrefix(parts[1], "~") {
+			return parts[2]
+		}
+		if len(parts) > 1 {
+			return parts[1]
+		}
+	case "cgl.tideland.biz":
+		return "tcgl"
+	}
+	return pkg
 }
