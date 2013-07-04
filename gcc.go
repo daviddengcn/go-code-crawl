@@ -78,16 +78,19 @@ func ParsePersonId(id string) (site, username string) {
 	return parts[0], parts[1]
 }
 
+func HostOfPackage(pkg string) string {
+	u, err := url.Parse("http://" + pkg)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
 func GroupPackages(pkgs []string) (groups map[string][]string) {
 	groups = make(map[string][]string)
 
 	for _, pkg := range pkgs {
-		host := ""
-		u, err := url.Parse("http://" + pkg)
-		if err == nil {
-			host = u.Host
-		}
-
+		host := HostOfPackage(pkg)
 		groups[host] = append(groups[host], pkg)
 	}
 
